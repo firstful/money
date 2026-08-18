@@ -122,7 +122,7 @@ class PlaidClient:
 
     # ---- transactions (sync cursor semantics) ----
     def transactions_sync(self, access_token: str, cursor: str = "",
-                          max_wait: float = 30.0, poll: float = 2.0) -> dict:
+                          max_wait: float = 120.0, poll: float = 3.0) -> dict:
         """Sync with cursor pagination.
 
         A brand-new (sandbox or production) item reports
@@ -139,21 +139,34 @@ class PlaidClient:
         deadline = time.monotonic() + max_wait
         while True:
             r = self._post("/transactions/sync", payload)
+            status = r.get("transactions_update_status", "READY")
+            out["request_id"] = r.get("request_id", "")
+            out["has_more"] = r.get("has_more", False)
+            # Pagination: page-through with the cursor while has_more.
+            if r.get("has_more"):
+                # cursor has advanced → this page is stable, keep its rows
+                out["added"] += r.get("added", [])
+                out["modified"] += r.get("modified", [])
+                out["removed"] += r.get("removed", [])
+                out["next_cursor"] = r.get("next_cursor", out["next_cursor"])
+                payload["cursor"] = out["next_cursor"]
+                continue
+            # NOT READY → the async generator is still backfilling history.
+            # Only a READY status means the data is final (INITIAL_/HISTORICAL_
+            # _UPDATE_STARTED = still working). Re-query (same cursor) without
+            # accumulating — re-polls return the same unready set.
+            if status != "READY":
+                out["status"] = status
+                if time.monotonic() >= deadline:
+                    out["next_cursor"] = r.get("next_cursor", out["next_cursor"])
+                    break
+                time.sleep(poll)
+                continue
+            # READY and !has_more → final response, ingest this page.
+            out["status"] = "READY"
             out["added"] += r.get("added", [])
             out["modified"] += r.get("modified", [])
             out["removed"] += r.get("removed", [])
             out["next_cursor"] = r.get("next_cursor", out["next_cursor"])
-            out["has_more"] = r.get("has_more", False)
-            out["status"] = r.get("transactions_update_status", "READY")
-            out["request_id"] = r.get("request_id", "")
-            if out["has_more"]:
-                payload["cursor"] = out["next_cursor"]
-                continue
-            # not ready yet → wait for the async generator to finish, then retry
-            if out["status"] not in ("READY", "HISTORICAL_UPDATE_STARTED", "INITIAL_UPDATE_STARTED"):
-                if time.monotonic() >= deadline:
-                    break
-                time.sleep(poll)
-                continue
             break
         return out
