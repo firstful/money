@@ -1,10 +1,17 @@
-# NetworkPolicy — money (default-deny)
+# NetworkPolicy — money (INGRESS-ONLY default-deny)
 #
-# Self-contained app: parses uploads + renders Sankey locally, NO outbound
-# egress. Pattern per homelab Option A:
-#   * default-deny: no traffic in/out unless allowed below.
-#   * ingress to money: only Traefik (kube-system) — money.ffilt.us on :8000.
-#   * egress: DNS only (kube-dns), for all pods.
+# Self-contained-ish app: parses uploads + renders Sankey locally, PLUS makes
+# outbound HTTPS calls to Plaid (sandbox.plaid.com / production.plaid.com) for
+# the transaction-sync + correlation pilot, and writes the Plaid Secret via the
+# in-cluster kube-apiserver.
+#
+#  * INGRESS-ONLY default-deny (policyTypes: [Ingress]) — NOT [Ingress, Egress].
+#    Per homelab network-policy-isolation gotcha #5, on this k3s (embedded
+#    kube-router) any EGREESS rule intermittently drops NEW outbound
+#    connections, so apps that make outbound calls use ingress-only netpols
+#    (pattern: llm, cf-manager). Egress is ungoverned in the LAN-trust domain;
+#    DNS + kube-apiserver calls therefore work without explicit egress rules.
+#  * ingress to money: only Traefik (kube-system) — money.ffilt.us on :8000.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -12,7 +19,7 @@ metadata:
   namespace: money
 spec:
   podSelector: {}
-  policyTypes: [Ingress, Egress]
+  policyTypes: [Ingress]
 ---
 # Allow Traefik -> money (needed for money.ffilt.us).
 apiVersion: networking.k8s.io/v1
@@ -36,50 +43,3 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
----
-# DNS only — kube-dns.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  namespace: money
-spec:
-  podSelector: {}
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
----
-# kube-apiserver (kubernetes.default.svc = 10.43.0.1:443) — the app writes the
-# Plaid Secret via the in-cluster API.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-apiserver-egress
-  namespace: money
-spec:
-  podSelector:
-    matchLabels:
-      app: money
-  policyTypes: [Egress]
-  egress:
-    - to:
-        - ipBlock:
-            cidr: 10.43.0.1/32    # kubernetes.default.svc ClusterIP
-        - ipBlock:
-            cidr: 192.168.1.2/32  # apiserver endpoint (post-DNAT view)
-      ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 6443

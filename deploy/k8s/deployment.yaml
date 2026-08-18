@@ -15,8 +15,9 @@ spec:
       labels:
         app: money
       annotations:
-        # no external egress needed — pure local parse/render
-        ffilt.us/egress-hosts: "none"
+        # outbound to Plaid (sandbox + production) for the sync/correlation pilot.
+        # Ingress-only netpol (below) — egress is ungoverned per homelab gotcha #5.
+        ffilt.us/egress-hosts: "sandbox.plaid.com, production.plaid.com"
     spec:
       serviceAccountName: money
       securityContext:
@@ -25,7 +26,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: money
-          image: 192.168.1.2:3000/reeds/money:fe747835
+          image: 192.168.1.2:3000/reeds/money:0e595fe2
           imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8000, name: http}
