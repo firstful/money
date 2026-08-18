@@ -1,0 +1,4 @@
+Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit
+2026-02-01,2026-02-02,1234,WALMART #1234,Groceries,115.23,0.00
+2026-02-05,2026-02-06,1234,PAYMENT - THANK YOU,Payment,0.00,400.00
+2026-02-09,2026-02-10,1234,AMAZON.COM,Merchandise,32.99,0.00

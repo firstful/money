@@ -1,0 +1,12 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    uses: reeds/ci-pipelines/.gitea/workflows/build-python.yml@main
+    with:
+      image: reeds/money
+    secrets: inherit

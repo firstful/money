@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money · money.ffilt.us</title>
+<script src="/static/plotly.min.js"></script>
+<style>
+  :root{
+    --bg:#12161c; --panel:#1c232d; --panel2:#141a22; --border:#2a3442;
+    --text:#e6ebf2; --muted:#8fa0b3; --accent:#5f9e6e; --danger:#d16a6a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  header{padding:14px 22px;border-bottom:1px solid var(--border);
+         display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  header h1{font-size:18px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px}
+  .wrap{max-width:1200px;margin:0 auto;padding:18px 22px 60px}
+  .grid{display:grid;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 12px}
+  label{font-size:12px;color:var(--muted);display:block;margin:8px 0 4px}
+  input[type=text],input[type=date],select{background:var(--panel2);border:1px solid var(--border);
+    color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%}
+  button{background:var(--accent);color:#0c120e;border:0;padding:9px 16px;border-radius:6px;
+    font-weight:600;cursor:pointer;font-size:13px}
+  button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+  button.danger{background:var(--danger);color:#200b0b}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .check{display:flex;align-items:center;gap:6px;margin:0}
+  .check input{width:auto}
+  .chip{display:inline-block;background:var(--panel2);border:1px solid var(--border);
+    border-radius:20px;padding:6px 14px;font-size:13px;margin:4px 6px 4px 0;cursor:pointer}
+  .chip.active{background:var(--accent);color:#0c120e;border-color:var(--accent)}
+  #stats{display:flex;gap:24px;flex-wrap:wrap}
+  #stats b{font-size:22px;display:block}
+  #stats span{font-size:11px;color:var(--muted)}
+  #plot{width:100%;min-height:460px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;cursor:pointer}
+  td.neg{color:#e68989} td.pos{color:#7fc58e}
+  .muted{color:var(--muted)}
+  #msg{font-size:13px;min-height:18px}
+  .err{color:#ffb4a2}
+  .files{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>💰 money</h1>
+  <span class="sub">bank · credit card · merchant exports → money-flow Sankey</span>
+</header>
+<div class="wrap grid">
+
+  <!-- upload -->
+  <div class="card">
+    <h2>Upload an export</h2>
+    <form id="uploadForm">
+      <div class="row">
+        <div style="flex:2;min-width:220px">
+          <label>CSV file (bank, CC, or merchant export)</label>
+          <input type="file" id="file" accept=".csv,.txt,.tsv" required>
+        </div>
+        <div style="flex:1;min-width:160px">
+          <label>Source label (e.g. "Huntington Checking", "Sams Club")</label>
+          <input type="text" id="source" placeholder="auto from filename if blank">
+        </div>
+        <div style="flex:1;min-width:140px">
+          <label>Issuer profile (optional)</label>
+          <select id="profile">
+            <option value="">auto-detect</option>
+            <option value="huntington">Huntington</option>
+            <option value="chase">Chase</option>
+            <option value="capone">Capital One</option>
+            <option value="amex">Amex</option>
+            <option value="bestegg">BestEgg</option>
+            <option value="samsclub">Sams Club</option>
+            <option value="syncovy">Syncovy</option>
+          </select>
+        </div>
+        <div style="align-self:end;padding-bottom:8px">
+          <label class="check"><input type="checkbox" id="allSpend"> All rows are purchases (merchant export)</label>
+        </div>
+        <div style="align-self:end;padding-bottom:8px">
+          <button type="submit">Upload &amp; parse</button>
+        </div>
+      </div>
+    </form>
+    <div id="msg" class="muted"></div>
+  </div>
+
+  <!-- filters -->
+  <div class="card">
+    <h2>Filters</h2>
+    <div class="row">
+      <div style="flex:1;min-width:170px"><label>Source</label><select id="fSource"><option value="">all sources</option></select></div>
+      <div style="flex:1;min-width:170px"><label>Category</label><select id="fCategory"><option value="">all categories</option></select></div>
+      <div style="flex:1;min-width:150px"><label>Direction</label>
+        <select id="fDirection"><option value="out">spending (out)</option><option value="in">income (in)</option></select></div>
+      <div style="flex:1;min-width:150px"><label>Layers</label>
+        <select id="fLayers"><option value="source,category,merchant">source → category → merchant</option>
+        <option value="source,merchant">source → merchant</option>
+        <option value="category,merchant">category → merchant</option>
+        <option value="merchant">merchant only</option></select></div>
+      <div style="flex:1;min-width:130px"><label>Top merchants</label>
+        <select id="fTop"><option value="0">all</option><option value="8">top 8</option><option value="15">top 15</option></select></div>
+      <div style="align-self:end;padding-bottom:8px"><button type="button" id="applyFilter" class="secondary">Apply</button></div>
+    </div>
+  </div>
+
+  <!-- stats + sankey -->
+  <div class="card">
+    <h2>Summary</h2>
+    <div id="stats">—</div>
+  </div>
+  <div class="card">
+    <h2>Sankey</h2>
+    <div id="plot"><p class="muted" style="text-align:center;padding:60px">Upload a file to see money flows.</p></div>
+  </div>
+
+  <!-- files + table -->
+  <div class="card">
+    <h2>Uploaded files</h2>
+    <div id="files" class="files">—</div>
+  </div>
+  <div class="card">
+    <h2>Transactions <span id="txCount" class="muted"></span></h2>
+    <div style="overflow:auto;max-height:420px"><table id="txTable"><thead><tr>
+      <th data-k="date">Date</th><th data-k="source">Source</th><th data-k="category">Category</th>
+      <th data-k="description">Description</th><th data-k="amount" style="text-align:right">Amount</th></tr>
+    </thead><tbody></tbody></table></div>
+  </div>
+
+</div>
+<script>
+const $ = (id)=>document.getElementById(id);
+let sortKey="date", sortDir=1;
+const money = new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"});
+const fmtD = (d)=> d? d.slice(0,10):"";
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  if(!r.ok){ const t=await r.text().catch(()=>""); throw new Error((r.status)+" "+t.slice(0,200)); }
+  if(r.status===204) return null; return r.json();
+}
+function msg(t,err){ $("msg").textContent=t; $("msg").className = err? "err":"muted"; }
+
+$("uploadForm").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const f=$("file").files[0]; if(!f) return;
+  const fd=new FormData();
+  fd.append("file", f);
+  fd.append("source", $("source").value);
+  fd.append("profile", $("profile").value);
+  fd.append("all_spend", $("allSpend").checked ? "true":"false");
+  msg("Parsing…");
+  try{
+    const r=await api("/api/upload",{method:"POST",body:fd});
+    msg(`✓ parsed ${r.parsed} rows from "${f.name}" (in ${money.format(r.inflow)}, out ${money.format(r.outflow)})`);
+    await refresh();
+  }catch(err){ msg("✗ "+err.message, true); }
+});
+
+async function refresh(){
+  await loadFacets(); await renderFiles(); await renderPlot(); await renderTable(); await renderStats();
+}
+
+async function loadFacets(){
+  const f = await api("/api/facets");
+  fillSelect($("fSource"), f.sources, "all sources");
+  fillSelect($("fCategory"), f.categories, "all categories");
+}
+function fillSelect(sel, arr, allLabel){
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">${allLabel}</option>` +
+    arr.map(v=>`<option value="${v}" ${v===cur?"selected":""}>${v}</option>`).join("");
+}
+
+function filters(){
+  const p=new URLSearchParams();
+  if($("fSource").value) p.set("source",$("fSource").value);
+  if($("fCategory").value) p.set("category",$("fCategory").value);
+  p.set("direction",$("fDirection").value);
+  if($("fTop").value!="0") p.set("top",$("fTop").value);
+  return p;
+}
+
+async function renderPlot(){
+  const p=filters();
+  p.set("layers",$("fLayers").value);
+  try{
+    const fig=await api("/api/sankey?"+p);
+    Plotly.react("plot", fig.data, fig.layout);
+  }catch(err){ $("plot").innerHTML=`<p class='err'>${err.message}</p>`; }
+}
+
+async function renderStats(){
+  const p=filters(); p.delete("layers"); p.delete("top");
+  const s=await api("/api/summary?"+p);
+  $("stats").innerHTML=
+    `<div><b>${s.transactions}</b><span>transactions</span></div>`+
+    `<div><b>${money.format(s.outflow)}</b><span>total out</span></div>`+
+    `<div><b>${money.format(s.inflow)}</b><span>total in</span></div>`;
+}
+
+async function renderFiles(){
+  const fl=await api("/api/files");
+  if(!fl.length){ $("files").innerHTML="<span class='muted'>none yet</span>"; return; }
+  $("files").innerHTML="<table class='files'><thead><tr><th>file</th><th>source</th><th>rows</th><th>uploaded</th><th></th></tr></thead><tbody>"+
+    fl.map(f=>`<tr><td>${f.filename}</td><td>${f.source}</td><td>${f.row_count}</td><td>${f.uploaded_at}</td>`+
+      `<td><button class="danger" data-del="${f.id}" style="padding:3px 10px">delete</button></td></tr>`).join("")+"</tbody></table>";
+  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",async()=>{
+    await api("/api/files/"+b.dataset.del,{method:"DELETE"}); await refresh();
+  }));
+}
+
+async function renderTable(){
+  const p=filters();
+  p.set("limit","400");
+  const txs=await api("/api/transactions?"+p);
+  $("txCount").textContent=`(${txs.length} shown)`;
+  const order={date:0,source:1,category:2,description:3,amount:4};
+  txs.sort((a,b)=>{ const x=a[sortKey]==null?"":a[sortKey], y=b[sortKey]==null?"":b[sortKey];
+    const c= typeof x==="number"? x-y : String(x).localeCompare(String(y));
+    return c*sortDir; });
+  $("txTable").querySelector("tbody").innerHTML = txs.map(t=>{
+    const cls = t.direction==="out"?"neg":"pos";
+    const sgn = t.amount<0?"":"+";
+    return `<tr><td>${fmtD(t.date)}</td><td>${t.source||""}</td><td>${t.category||""}</td>`+
+      `<td>${(t.description||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")}</td>`+
+      `<td align="right" class="${cls}">${sgn}${money.format(t.amount)}</td></tr>`;
+  }).join("");
+}
+document.querySelectorAll("#txTable th[data-k]").forEach(th=>th.addEventListener("click",()=>{
+  const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=(k=="amount")?-1:1;}
+  renderTable();
+}));
+["fSource","fCategory","fDirection","fLayers","fTop"].forEach(id=>
+  $(id).addEventListener("change", renderPlot));
+$("applyFilter").addEventListener("click", ()=>{ renderPlot(); renderStats(); renderTable(); });
+
+refresh().catch(e=>console.error(e));
+</script>
+</body>
+</html>
