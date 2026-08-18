@@ -33,7 +33,7 @@ def test_parse_date():
 
 
 def test_chase_personal_real_sample():
-    txs = csv_to_transactions(_load("chase-personal.csv"), source="Chase Personal")
+    txs = csv_to_transactions(_load("huntington.csv"), source="Huntington")
     assert len(txs) == 52
     assert txs[0]["date"] == "2025-08-29"
     assert txs[0]["direction"] == "in"

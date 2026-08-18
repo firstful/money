@@ -21,11 +21,11 @@ def test_healthz():
 
 
 def test_upload_and_sankey():
-    with open(os.path.join(SAMPLES, "chase-personal.csv"), "rb") as f:
+    with open(os.path.join(SAMPLES, "huntington.csv"), "rb") as f:
         r = client.post(
             "/api/upload",
-            files={"file": ("chase-personal.csv", f, "text/csv")},
-            data={"source": "Chase Personal"},
+            files={"file": ("huntington.csv", f, "text/csv")},
+            data={"source": "Huntington"},
         )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -33,7 +33,7 @@ def test_upload_and_sankey():
 
     # facets
     facets = client.get("/api/facets").json()
-    assert "Chase Personal" in facets["sources"]
+    assert "Huntington" in facets["sources"]
 
     # sankey expenses
     s = client.get("/api/sankey?layers=source,category,merchant&direction=out").json()
