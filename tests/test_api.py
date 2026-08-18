@@ -1,11 +1,14 @@
 """End-to-end API tests (upload -> parse -> store -> sankey) with a temp DB."""
 
 import os
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 os.environ["DATA_DIR"] = "/tmp/money-test-data"
+# clean slate before the module-level Store is constructed at import
+shutil.rmtree(os.environ["DATA_DIR"], ignore_errors=True)
 
 from fastapi.testclient import TestClient  # noqa: E402
 
