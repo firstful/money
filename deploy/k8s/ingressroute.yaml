@@ -1,0 +1,25 @@
+# IngressRoute — money.ffilt.us (Cloudflare Access is the auth boundary)
+#
+# External: *.ffilt.us CNAME -> Cloudflare tunnel (proxied). Browsers resolve
+# the tunnel, pass the Cloudflare Access app for money.ffilt.us (Google login,
+# reedsutliff@gmail.com), then cloudflared -> Traefik -> this route. Same-origin
+# UI + API ride the whole host — NO header gate (a UI calling its API is a
+# same-origin client, per the vision.ffilt.us ruling).
+#
+# LAN: split-DNS (*.ffilt.us -> 192.168.1.2) goes straight to Traefik, same
+# route matches, no Cloudflare headers — works unchanged on the LAN.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: money
+  namespace: money
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`money.ffilt.us`)
+      services:
+        - name: money
+          port: 80

@@ -93,6 +93,20 @@
     <div id="msg" class="muted"></div>
   </div>
 
+  <!-- plaid secrets -->
+  <div class="card">
+    <h2>Plaid API secrets</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:12px">Stored as a Kubernetes Secret (<code>money/plaid-secrets</code>). Never shown again after saving — blank a field to keep its current value.</p>
+    <div class="row">
+      <div style="flex:1;min-width:150px"><label>CLIENT_ID</label><input type="text" id="sClientId" autocomplete="off" spellcheck="false"></div>
+      <div style="flex:1;min-width:150px"><label>CLIENT_SECRET_PRD (production)</label><input type="password" id="sSecretPrd" autocomplete="new-password"></div>
+      <div style="flex:1;min-width:150px"><label>CLIENT_SECRET_TST (sandbox)</label><input type="password" id="sSecretTst" autocomplete="new-password"></div>
+      <div style="align-self:end;padding-bottom:8px"><button type="button" id="saveSecrets">Save</button></div>
+    </div>
+    <div id="secretsState" class="muted" style="margin-top:8px;font-size:12px">—</div>
+    <div id="secretsMsg" class="muted" style="font-size:12px"></div>
+  </div>
+
   <!-- filters -->
   <div class="card">
     <h2>Filters</h2>
@@ -243,7 +257,36 @@ document.querySelectorAll("#txTable th[data-k]").forEach(th=>th.addEventListener
   $(id).addEventListener("change", renderPlot));
 $("applyFilter").addEventListener("click", ()=>{ renderPlot(); renderStats(); renderTable(); });
 
+// ---- Plaid secrets (write-only panel) ----
+function renderSecretsState(set){
+  const dot=(k)=> set[k] ? '<span style="color:#7fc58e">✓ set</span>' : '<span style="color:#5a6673">—</span>';
+  $("secretsState").innerHTML =
+    `CLIENT_ID ${dot("client_id")} &nbsp;·&nbsp; PRD ${dot("client_secret_prd")} &nbsp;·&nbsp; TST ${dot("client_secret_tst")}`;
+}
+async function loadSecrets(){
+  try{
+    const s = await api("/api/secrets/plaid");
+    renderSecretsState(s.secrets_set);
+  }catch(e){ $("secretsState").textContent = "secrets endpoint unavailable"; }
+}
+$("saveSecrets").addEventListener("click", async ()=>{
+  const body = {
+    client_id: $("sClientId").value,
+    client_secret_prd: $("sSecretPrd").value,
+    client_secret_tst: $("sSecretTst").value,
+  };
+  $("secretsMsg").textContent = "Saving…";
+  try{
+    const r = await api("/api/secrets/plaid", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    $("sClientId").value=$("sSecretPrd").value=$("sSecretTst").value="";
+    renderSecretsState(r.secrets_set);
+    $("secretsMsg").textContent = "✓ saved — values stored in k8s Secret (never echoed)";
+  }catch(err){ $("secretsMsg").textContent="✗ "+err.message; }
+});
+
 refresh().catch(e=>console.error(e));
+loadSecrets().catch(e=>console.error(e));
 </script>
 </body>
 </html>

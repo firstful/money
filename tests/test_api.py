@@ -78,3 +78,36 @@ def test_upload_rejects_bad_headers():
         data={"source": "Junk"},
     )
     assert r.status_code == 422
+
+
+def test_plaid_secrets_write_only():
+    # starts unconfigured
+    s = client.get("/api/secrets/plaid").json()
+    assert s["secrets_set"] == {
+        "client_id": False, "client_secret_prd": False, "client_secret_tst": False,
+    }
+
+    # save all three
+    r = client.post("/api/secrets/plaid", json={
+        "client_id": "cid123", "client_secret_prd": "prdsecret", "client_secret_tst": "tstsecret",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["secrets_set"] == {
+        "client_id": True, "client_secret_prd": True, "client_secret_tst": True,
+    }
+    # values are NEVER echoed
+    assert "cid123" not in r.text
+    assert "prdsecret" not in r.text
+    assert "tstsecret" not in r.text
+
+    # GET is also write-only
+    g = client.get("/api/secrets/plaid").json()
+    assert g["secrets_set"] == body["secrets_set"]
+
+    # partial update leaves the others intact
+    r2 = client.post("/api/secrets/plaid", json={"client_secret_prd": "prdsecret2"})
+    assert "prdsecret2" not in r2.text
+    assert r2.json()["secrets_set"] == {
+        "client_id": True, "client_secret_prd": True, "client_secret_tst": True,
+    }

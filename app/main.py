@@ -7,8 +7,10 @@ import os
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .db import Store
+from .k8s import default_secret_store
 from .parser import csv_to_transactions
 from .sankey import DIMS, build_figure
 
@@ -16,6 +18,9 @@ app = FastAPI(title="money", version="0.1.0")
 
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 store = Store(os.path.join(DATA_DIR, "money.db"))
+
+PLAID_FIELDS = ("client_id", "client_secret_prd", "client_secret_tst")
+secret_store = default_secret_store()
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
@@ -151,6 +156,42 @@ def sankey(
 @app.get("/api/dims")
 def dims():
     return {"dims": sorted(DIMS.keys()), "directions": ["out", "in"]}
+
+
+# ---------------- Plaid secrets (write-only, stored as a k8s Secret) ----------------
+class PlaidSecretsIn(BaseModel):
+    client_id: str = ""
+    client_secret_prd: str = ""
+    client_secret_tst: str = ""
+
+
+def _plaid_status(data: dict) -> dict:
+    # NEVER echo the secret values — only whether each is configured.
+    return {"secrets_set": {f: bool((data or {}).get(f)) for f in PLAID_FIELDS}}
+
+
+@app.get("/api/secrets/plaid")
+def plaid_secrets_status():
+    try:
+        data = secret_store.get("plaid-secrets")
+    except Exception as e:
+        raise HTTPException(503, f"k8s secrets unavailable: {e}")
+    return _plaid_status(data)
+
+
+@app.post("/api/secrets/plaid")
+def plaid_secrets_set(payload: PlaidSecretsIn):
+    try:
+        existing = secret_store.get("plaid-secrets")
+        merged = dict(existing)
+        for f in PLAID_FIELDS:
+            v = getattr(payload, f, "") or ""
+            if v:
+                merged[f] = v.strip()
+        secret_store.set("plaid-secrets", {k: merged[k] for k in PLAID_FIELDS if merged.get(k)})
+    except Exception as e:
+        raise HTTPException(503, f"k8s secrets unavailable: {e}")
+    return _plaid_status(merged)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

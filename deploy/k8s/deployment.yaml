@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: money
+  namespace: money
+  labels:
+    app: money
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: money
+  template:
+    metadata:
+      labels:
+        app: money
+      annotations:
+        # no external egress needed — pure local parse/render
+        ffilt.us/egress-hosts: "none"
+    spec:
+      serviceAccountName: money
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: money
+          image: 192.168.1.2:3000/reeds/money:147c035a
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {containerPort: 8000, name: http}
+          env:
+            - {name: DATA_DIR, value: /data}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 250m, memory: 384Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: money-data
