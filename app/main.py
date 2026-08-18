@@ -13,6 +13,8 @@ from .db import Store
 from .k8s import default_secret_store
 from .parser import csv_to_transactions
 from .sankey import DIMS, build_figure
+from .plaid import PlaidClient, PlaidError
+from . import correlate as corr
 
 app = FastAPI(title="money", version="0.1.0")
 
@@ -192,6 +194,188 @@ def plaid_secrets_set(payload: PlaidSecretsIn):
     except Exception as e:
         raise HTTPException(503, f"k8s secrets unavailable: {e}")
     return _plaid_status(merged)
+
+
+# ---------------- Plaid pilot: sandbox item + sync + correlations ----------------
+SANDBOX_INSTITUTION = "ins_109508"  # First Platypus Bank (seeded tx history)
+
+
+class SandboxItemIn(BaseModel):
+    institution_id: str = SANDBOX_INSTITUTION
+    products: list[str] = ["transactions"]
+
+
+def _plaid(env: str) -> PlaidClient:
+    return PlaidClient(env=env, secret_store=secret_store)
+
+
+def _plaid_http(exc: PlaidError):
+    return JSONResponse(status_code=exc.code if 400 <= exc.code < 600 else 502,
+                        content={"error_type": getattr(exc, "error_type", None),
+                                 "error_code": getattr(exc, "error_code", None),
+                                 "message": getattr(exc, "message", None) or str(exc)})
+
+
+@app.get("/api/plaid/status")
+def plaid_status():
+    try:
+        data = secret_store.get("plaid-secrets")
+    except Exception as e:
+        raise HTTPException(503, f"k8s secrets unavailable: {e}")
+    return {
+        "env": "sandbox" if data.get("client_secret_tst") else "production",
+        "secrets_set": _plaid_status(data)["secrets_set"],
+        "items": store.list_plaid_items(),
+    }
+
+
+@app.post("/api/plaid/sandbox/item")
+def plaid_sandbox_item(payload: SandboxItemIn):
+    """Create a sandbox item directly (no Link UI) and store its access token."""
+    client = _plaid("sandbox")
+    try:
+        pub = client.sandbox_public_token_create(
+            institution_id=payload.institution_id,
+            products=payload.products,
+        )
+        exch = client.item_public_token_exchange(pub["public_token"])
+    except PlaidError as e:
+        return _plaid_http(e)
+    item_id = exch["item_id"]
+    access_token = exch["access_token"]
+    accounts = client.accounts_get(access_token)
+    store.upsert_plaid_item(item_id, access_token, payload.institution_id,
+                            accounts, env="sandbox")
+    return {
+        "item_id": item_id,
+        "institution_id": payload.institution_id,
+        "accounts": [{"id": a.get("account_id"), "name": a.get("name"),
+                      "mask": a.get("mask"), "type": a.get("type"),
+                      "subtype": a.get("subtype")} for a in accounts],
+    }
+
+
+@app.post("/api/plaid/sync")
+def plaid_sync(env: str = "sandbox", item_id: str = ""):
+    """Run /transactions/sync for every stored item (or one) and store results."""
+    client = _plaid(env)
+    if item_id:
+        it = store.get_plaid_item(item_id)
+        items = [it] if it else []
+    else:
+        items = store.list_plaid_items_for_sync(env)
+    totals = {"items": 0, "added": 0, "modified": 0, "removed": 0, "errors": []}
+    for it in items:
+        if not it:
+            continue
+        try:
+            res = client.transactions_sync(it["access_token"], it.get("cursor") or "")
+            for tr in res.get("added", []):
+                if store.upsert_plaid_tx(tr, it["item_id"]):
+                    totals["added"] += 1
+            for tr in res.get("modified", []):
+                store.upsert_plaid_tx(tr, it["item_id"])
+                totals["modified"] += 1
+            for tr in res.get("removed", []):
+                store.delete_plaid_tx(tr.get("transaction_id", ""))
+                totals["removed"] += 1
+            store.set_plaid_cursor(it["item_id"], res.get("next_cursor") or "")
+            totals["items"] += 1
+        except PlaidError as e:
+            totals["errors"].append({"item_id": it["item_id"], "detail": str(e)})
+    return totals
+
+
+@app.get("/api/plaid/transactions")
+def plaid_transactions(item_id: str = "", merchant: str = "",
+                       start: str = "", end: str = "", limit: int = 2000):
+    return store.query_plaid(item_id=item_id, merchant=merchant,
+                             start=start, end=end, limit=limit)
+
+
+# ---------------- order ingest + correlation ----------------
+class OrderIn(BaseModel):
+    order_no: str
+    retailer: str
+    date: str
+    total: float
+    items: list[dict] = []
+    source: str = "manual"
+
+
+@app.post("/api/orders")
+def add_order(payload: OrderIn):
+    oid = store.add_order(payload.order_no.strip(), payload.retailer.strip(),
+                          payload.date, payload.total, payload.items, payload.source)
+    return {"id": oid, **payload.model_dump()}
+
+
+@app.get("/api/orders")
+def list_orders(retailer: str = ""):
+    return store.list_orders(retailer=retailer)
+
+
+@app.post("/api/correlate")
+def run_correlation():
+    """Best-effort: link each order to a Plaid transaction; surface unknowns."""
+    orders = store.list_orders()
+    txs = store.query_plaid(limit=5000)
+    existing = {c["order_no"] for c in store.query_correlations()}
+    results = {"auto": [], "review": [], "unmatched": [], "skipped": []}
+    for order in orders:
+        if order["order_no"] in existing:
+            results["skipped"].append(order["order_no"])
+            continue
+        d = corr.decide(order, txs, existing)
+        st = d["status"]
+        if st == "auto":
+            store.upsert_correlation(d["tx_id"], d["order_no"], d["score"], "auto", d.get("split"))
+            results["auto"].append(d)
+        elif st == "review":
+            store.upsert_correlation(d["tx_id"], d["order_no"], d["score"], "review")
+            results["review"].append({"order_no": d["order_no"], "top": d.get("candidates", [None])[0]})
+        else:
+            results["unmatched"].append(d["order_no"])
+    return results
+
+
+@app.get("/api/correlations")
+def correlations(status: str = ""):
+    return store.query_correlations(status=status)
+
+
+@app.get("/api/needs-review")
+def needs_review():
+    """What Reed must disambiguate: correlations in 'review' + unmatched orders
+    (order with no candidate)."""
+    reviews = store.query_correlations(status="review")
+    all_orders = store.list_orders()
+    correlated = {c["order_no"] for c in store.query_correlations()}
+    unmatched_orders = [o for o in all_orders if o["order_no"] not in correlated]
+    return {"review_correlations": reviews, "unmatched_orders": unmatched_orders}
+
+
+class ResolveIn(BaseModel):
+    tx_id: str
+    order_no: str
+    status: str  # 'confirmed' | 'rejected'
+
+
+@app.post("/api/correlations/resolve")
+def resolve_correlation(payload: ResolveIn):
+    corr_row = store.get_correlation(payload.tx_id, payload.order_no)
+    if not corr_row:
+        raise HTTPException(404, "correlation not found")
+    store.resolve_correlation(corr_row["id"],
+                              "confirmed" if payload.status == "confirmed" else "rejected",
+                              "reed")
+    return {"id": corr_row["id"], "status": payload.status}
+
+
+@app.post("/api/correlations/clear")
+def clear_correlations():
+    store.clear_correlations()
+    return {"cleared": True}
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
