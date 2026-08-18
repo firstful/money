@@ -229,6 +229,52 @@ def plaid_status():
     }
 
 
+class LinkTokenIn(BaseModel):
+    env: str = "production"          # 'production' | 'sandbox'
+    products: list[str] = ["transactions"]
+
+
+@app.post("/api/plaid/link/token")
+def plaid_link_token(payload: LinkTokenIn):
+    """Create a Link token for the given env (production = real bank login)."""
+    env = payload.env if payload.env in ("production", "sandbox") else "production"
+    client = _plaid(env)
+    try:
+        r = client.link_token_create(client_user_id="reedsutliff", products=payload.products)
+    except PlaidError as e:
+        return _plaid_http(e)
+    return {"link_token": r["link_token"], "expiration": r.get("expiration"), "env": env}
+
+
+class ExchangeIn(BaseModel):
+    public_token: str
+    env: str = "production"
+
+
+@app.post("/api/plaid/item/exchange")
+def plaid_item_exchange(payload: ExchangeIn):
+    """Exchange a public_token (from Link, production or sandbox) for an access_token,
+    then store the item so `POST /api/plaid/sync?env=<env>` picks it up."""
+    env = payload.env if payload.env in ("production", "sandbox") else "production"
+    client = _plaid(env)
+    try:
+        exch = client.item_public_token_exchange(payload.public_token.strip())
+        accounts = client.accounts_get(exch["access_token"])
+        item = client.item_get(exch["access_token"])
+    except PlaidError as e:
+        return _plaid_http(e)
+    store.upsert_plaid_item(exch["item_id"], exch["access_token"],
+                            item.get("institution_id", ""), accounts, env=env)
+    return {
+        "item_id": exch["item_id"],
+        "env": env,
+        "institution_id": item.get("institution_id", ""),
+        "accounts": [{"id": a.get("account_id"), "name": a.get("name"),
+                      "mask": a.get("mask"), "type": a.get("type"),
+                      "subtype": a.get("subtype")} for a in accounts],
+    }
+
+
 @app.post("/api/plaid/sandbox/item")
 def plaid_sandbox_item(payload: SandboxItemIn):
     """Create a sandbox item directly (no Link UI) and store its access token."""

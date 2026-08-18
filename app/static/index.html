@@ -107,6 +107,19 @@
     <div id="secretsMsg" class="muted" style="font-size:12px"></div>
   </div>
 
+  <!-- plaid connect (production Link) -->
+  <div class="card">
+    <h2>Connect a bank / credit account</h2>
+    <p class="muted" style="margin:0 0 8px;font-size:12px">Open Plaid Link and sign into your real bank or credit-card issuer. The account is stored as a <code>production</code> item on this box (Plaid access token, LAN only).</p>
+    <div class="row">
+      <button type="button" id="connectAccount">Connect account</button>
+      <button type="button" id="syncPlaid" class="secondary">Sync all Plaid transactions</button>
+      <button type="button" id="connectTest" class="secondary">Sandbox test account</button>
+    </div>
+    <div id="plaidMsg" class="muted" style="margin-top:8px;font-size:12px">—</div>
+    <div id="plaidItems" class="files" style="margin-top:10px"></div>
+  </div>
+
   <!-- filters -->
   <div class="card">
     <h2>Filters</h2>
@@ -287,6 +300,75 @@ $("saveSecrets").addEventListener("click", async ()=>{
 
 refresh().catch(e=>console.error(e));
 loadSecrets().catch(e=>console.error(e));
+
+// ---- Plaid Link: connect production account ----
+const plaidMsg = (t,err)=>{ $("plaidMsg").textContent=t; $("plaidMsg").className = err? "err":"muted"; };
+
+async function renderPlaidItems(){
+  try{
+    const s = await api("/api/plaid/status");
+    const items = s.items || [];
+    if(!items.length){ $("plaidItems").innerHTML="<span class='muted'>no linked accounts yet</span>"; return; }
+    $("plaidItems").innerHTML = "<table class='files'><thead><tr><th>env</th><th>institution</th><th>accounts</th><th>tx</th><th>linked</th></tr></thead><tbody>"+
+      items.map(it=>`<tr><td>${it.env}</td><td>${it.institution_id}</td>`+
+        `<td>${(it.accounts||[]).map(a=>`${a.name} (…${a.mask||""})`).join(", ")||"-"}</td>`+
+        `<td>${it.tx_count}</td><td>${fmtD(it.linked_at)}</td></tr>`).join("")+"</tbody></table>";
+  }catch(e){ $("plaidItems").textContent="items unavailable: "+e.message; }
+}
+
+let linkHandler = null;
+function openLink(env){
+  plaidMsg("Creating Link token…");
+  api("/api/plaid/link/token",{method:"POST",headers:{"Content-Type":"application/json"},
+       body: JSON.stringify({env})}).then(tok=>{
+    if(!window.Plaid){ plaidMsg("✗ Plaid Link SDK failed to load", true); return; }
+    linkHandler = window.Plaid.create({
+      token: tok.link_token,
+      onSuccess: async (public_token, metadata)=>{
+        plaidMsg("Exchanging token…");
+        try{
+          const r = await api("/api/plaid/item/exchange",{method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({public_token, env})});
+          plaidMsg(`✓ linked ${r.accounts.length} account(s) — now syncing…`);
+          await runSync(env);
+          await renderPlaidItems();
+        }catch(e){ plaidMsg("✗ "+e.message, true); }
+      },
+      onExit: (err)=>{ if(err){ plaidMsg("Link exited: "+(err.error_message||err.display_message||err.code), true);} }
+    });
+    linkHandler.open();
+  }).catch(e=>plaidMsg("✗ "+e.message, true));
+}
+
+async function runSync(env){
+  plaidMsg(`Syncing (${env})… this can take ~30s on a fresh account`);
+  let r;
+  try{ r = await api("/api/plaid/sync?env="+env, {method:"POST"}); }
+  catch(e){ plaidMsg("✗ "+e.message, true); return; }
+  if(r.errors && r.errors.length) plaidMsg("⚠ sync partial: "+JSON.stringify(r.errors), true);
+  else plaidMsg(`✓ synced ${r.items} item(s): +${r.added} added, ~${r.modified} modified, −${r.removed} removed`);
+}
+
+$("connectAccount").addEventListener("click", ()=>openLink("production"));
+$("connectTest").addEventListener("click", async ()=>{
+  plaidMsg("Creating sandbox item…");
+  try{
+    await api("/api/plaid/sandbox/item",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    await runSync("sandbox"); await renderPlaidItems();
+  }catch(e){ plaidMsg("✗ "+e.message, true); }
+});
+$("syncPlaid").addEventListener("click", async ()=>{
+  try{
+    plaidMsg("Syncing production…");
+    await runSync("production"); await renderPlaidItems();
+  }catch(e){ plaidMsg("✗ "+e.message, true); }
+});
+
+// lazy-load Plaid Link SDK
+(function(){ const s=document.createElement("script");
+  s.src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"; s.async=true; s.onload=()=>{}; document.head.appendChild(s); })();
+renderPlaidItems().catch(e=>console.error(e));
 </script>
 </body>
 </html>

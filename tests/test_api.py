@@ -111,3 +111,36 @@ def test_plaid_secrets_write_only():
     assert r2.json()["secrets_set"] == {
         "client_id": True, "client_secret_prd": True, "client_secret_tst": True,
     }
+
+
+def test_plaid_link_token_fails_cleanly_not_500():
+    # FakeSecretStore may already hold fake creds (earlier test) → real Plaid
+    # rejects with a clean Plaid-error JSON. Guard: NEVER a 500, NEVER a leak,
+    # and the error body is the Plaid-shaped {"error_type","error_code","message"}.
+    r = client.post("/api/plaid/link/token", json={"env": "production"})
+    assert r.status_code in (400, 503), (r.status_code, r.text)
+    body = r.json()
+    assert "message" in body
+    assert "cid123" not in r.text and "prdsecret" not in r.text
+
+
+def test_plaid_exchange_requires_public_token():
+    r = client.post("/api/plaid/item/exchange", json={"env": "production"})
+    assert r.status_code == 422  # missing public_token → pydantic validation
+
+
+def test_correlation_endpoints_smoke():
+    # orders + correlate + needs-review are self-contained (no Plaid API)
+    order = {
+        "order_no": "T-1", "retailer": "Walmart", "date": "2026-08-10",
+        "total": 123.45, "items": [{"name": "TV", "price": 123.45}],
+    }
+    r = client.post("/api/orders", json=order)
+    assert r.status_code == 200 and r.json()["order_no"] == "T-1"
+    assert client.get("/api/orders").json()[0]["order_no"] == "T-1"
+    corr = client.post("/api/correlate").json()
+    # no plaid tx present → order is unmatched (surfaced for review)
+    assert "unmatched" in corr
+    nr = client.get("/api/needs-review").json()
+    assert any(o["order_no"] == "T-1" for o in nr["unmatched_orders"])
+    assert client.post("/api/correlations/clear").json()["cleared"] is True
