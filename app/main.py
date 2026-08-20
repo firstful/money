@@ -37,6 +37,14 @@ def index():
     return FileResponse(os.path.join(STATIC, "index.html"))
 
 
+@app.get("/privacy")
+def privacy():
+    return FileResponse(
+        os.path.join(STATIC, "privacy.html"),
+        media_type="text/html",
+    )
+
+
 # ---------------- uploads ----------------
 @app.post("/api/upload")
 async def upload(
