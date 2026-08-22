@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS plaid_items(
     item_id TEXT UNIQUE,
     access_token TEXT,
     institution_id TEXT,
+    institution_name TEXT,
+    institution_products TEXT,
     accounts_json TEXT,
     cursor TEXT,
     env TEXT,
@@ -102,6 +104,17 @@ class Store:
     def _init(self):
         conn = self._conn()
         conn.executescript(_SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        """Additive column migrations for DBs created by older builds."""
+        conn = self._conn()
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(plaid_items)")}
+        if "institution_name" not in cols:
+            conn.execute("ALTER TABLE plaid_items ADD COLUMN institution_name TEXT")
+        if "institution_products" not in cols:
+            conn.execute("ALTER TABLE plaid_items ADD COLUMN institution_products TEXT")
+        conn.commit()
         conn.commit()
 
     # ---- files ----
@@ -215,16 +228,21 @@ class Store:
 
     # ---- plaid items ----
     def upsert_plaid_item(self, item_id: str, access_token: str, institution_id: str,
-                          accounts: list[dict], env: str) -> int:
+                          accounts: list[dict], env: str,
+                          institution_name: str = "", institution_products: str = "") -> int:
         with self._wlock:
             conn = self._conn()
             try:
                 conn.execute(
                     "INSERT INTO plaid_items(item_id, access_token, institution_id,"
-                    " accounts_json, cursor, env, linked_at) VALUES (?,?,?,?,?,?,?)"
+                    " institution_name, institution_products,"
+                    " accounts_json, cursor, env, linked_at) VALUES (?,?,?,?,?,?,?,?,?)"
                     " ON CONFLICT(item_id) DO UPDATE SET institution_id=excluded.institution_id,"
+                    " institution_name=excluded.institution_name,"
+                    " institution_products=excluded.institution_products,"
                     " accounts_json=excluded.accounts_json, env=excluded.env",
                     (item_id, access_token, institution_id,
+                     institution_name, institution_products,
                      json.dumps(accounts, default=str), "", env, _now()),
                 )
                 conn.commit()
@@ -234,10 +252,26 @@ class Store:
                 conn.rollback()
                 raise
 
+    def set_plaid_institution(self, item_id: str, name: str, products: str):
+        """Backfill institution_name/products on an already-stored item."""
+        with self._wlock:
+            conn = self._conn()
+            try:
+                conn.execute(
+                    "UPDATE plaid_items SET institution_name=?, institution_products=?"
+                    " WHERE item_id=?",
+                    (name, products, item_id),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
     def list_plaid_items(self) -> list[dict]:
         conn = self._conn()
         rows = conn.execute(
-            "SELECT id, item_id, institution_id, accounts_json, cursor, env, linked_at,"
+            "SELECT id, item_id, institution_id, institution_name, institution_products,"
+            " accounts_json, cursor, env, linked_at,"
             " (SELECT COUNT(*) FROM plaid_transactions t WHERE t.item_id=plaid_items.item_id) AS tx_count"
             " FROM plaid_items ORDER BY linked_at"
         ).fetchall()

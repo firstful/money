@@ -13,28 +13,37 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
        font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
-  header{padding:14px 22px;border-bottom:1px solid var(--border);
-         display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  header{padding:12px 22px;border-bottom:1px solid var(--border);
+         display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;
+         background:var(--bg);z-index:10;}
   header h1{font-size:18px;margin:0;font-weight:600}
   header .sub{color:var(--muted);font-size:12px}
+  nav.tabs{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+  nav.tabs button{background:transparent;color:var(--muted);border:1px solid transparent;
+    padding:8px 13px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  nav.tabs button:hover{color:var(--text)}
+  nav.tabs button.active{color:var(--text);background:var(--panel);border-color:var(--border)}
   .wrap{max-width:1200px;margin:0 auto;padding:18px 22px 60px}
+  section.view{display:none;gap:16px}
+  section.view.active{display:grid}
   .grid{display:grid;gap:16px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
   .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0 0 12px}
+  .card .h2row{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .card .h2row h2{margin:0}
   label{font-size:12px;color:var(--muted);display:block;margin:8px 0 4px}
-  input[type=text],input[type=date],select{background:var(--panel2);border:1px solid var(--border);
+  input[type=text],input[type=date],input[type=password],select{background:var(--panel2);border:1px solid var(--border);
     color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%}
   button{background:var(--accent);color:#0c120e;border:0;padding:9px 16px;border-radius:6px;
     font-weight:600;cursor:pointer;font-size:13px}
   button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
   button.danger{background:var(--danger);color:#200b0b}
   button:disabled{opacity:.5;cursor:not-allowed}
+  button.small{padding:4px 10px;font-size:12px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
   .check{display:flex;align-items:center;gap:6px;margin:0}
   .check input{width:auto}
-  .chip{display:inline-block;background:var(--panel2);border:1px solid var(--border);
-    border-radius:20px;padding:6px 14px;font-size:13px;margin:4px 6px 4px 0;cursor:pointer}
-  .chip.active{background:var(--accent);color:#0c120e;border-color:var(--accent)}
   #stats{display:flex;gap:24px;flex-wrap:wrap}
   #stats b{font-size:22px;display:block}
   #stats span{font-size:11px;color:var(--muted)}
@@ -44,138 +53,269 @@
   th{color:var(--muted);font-weight:600;cursor:pointer}
   td.neg{color:#e68989} td.pos{color:#7fc58e}
   .muted{color:var(--muted)}
-  #msg{font-size:13px;min-height:18px}
   .err{color:#ffb4a2}
+  .ok{color:#7fc58e}
   .files{font-size:12px}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge.ok{background:rgba(95,158,110,.18);color:#7fc58e;border:1px solid rgba(95,158,110,.4)}
+  .badge.warn{background:rgba(209,106,106,.15);color:#e68989;border:1px solid rgba(209,106,106,.4)}
+  .badge.mute{background:var(--panel2);color:var(--muted);border:1px solid var(--border)}
+  /* modals */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;
+    align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow:auto}
+  .modal-backdrop.open{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    max-width:660px;width:100%;padding:20px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .modal h2{margin:0 0 4px;font-size:15px;font-weight:600}
+  .modal .m-sub{color:var(--muted);font-size:12px;margin:0 0 14px}
+  .modal .m-close{float:right;background:none;border:0;color:var(--muted);font-size:20px;
+    cursor:pointer;line-height:1;margin-top:-4px}
+  .m-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;font-size:12.5px;margin:10px 0}
+  .kv dt{color:var(--muted)} .kv dd{margin:0;word-break:break-word}
 </style>
 </head>
 <body>
 <header>
   <h1>💰 money</h1>
   <span class="sub">bank · credit card · merchant exports → money-flow Sankey</span>
+  <nav class="tabs">
+    <button data-tab="overview" class="active">Overview</button>
+    <button data-tab="transactions">Transactions</button>
+    <button data-tab="orders">Orders</button>
+    <button data-tab="review">Review</button>
+    <button data-tab="integrations">Integrations</button>
+  </nav>
+  <button id="openUpload" class="ghost">⬆ Upload</button>
 </header>
-<div class="wrap grid">
+<div class="wrap">
 
-  <!-- upload -->
-  <div class="card">
-    <h2>Upload an export</h2>
-    <form id="uploadForm">
+  <!-- ================= OVERVIEW ================= -->
+  <section class="view" id="view-overview">
+    <div class="card">
+      <h2>Filters</h2>
       <div class="row">
-        <div style="flex:2;min-width:220px">
-          <label>CSV file (bank, CC, or merchant export)</label>
-          <input type="file" id="file" accept=".csv,.txt,.tsv" required>
-        </div>
-        <div style="flex:1;min-width:160px">
-          <label>Source label (e.g. "Huntington Checking", "Sams Club")</label>
-          <input type="text" id="source" placeholder="auto from filename if blank">
-        </div>
-        <div style="flex:1;min-width:140px">
-          <label>Issuer profile (optional)</label>
-          <select id="profile">
-            <option value="">auto-detect</option>
-            <option value="huntington">Huntington</option>
-            <option value="chase">Chase</option>
-            <option value="capone">Capital One</option>
-            <option value="amex">Amex</option>
-            <option value="bestegg">BestEgg</option>
-            <option value="samsclub">Sams Club</option>
-            <option value="syncovy">Syncovy</option>
-          </select>
-        </div>
-        <div style="align-self:end;padding-bottom:8px">
-          <label class="check"><input type="checkbox" id="allSpend"> All rows are purchases (merchant export)</label>
-        </div>
-        <div style="align-self:end;padding-bottom:8px">
-          <button type="submit">Upload &amp; parse</button>
-        </div>
+        <div style="flex:1;min-width:170px"><label>Source</label><select id="fSource"><option value="">all sources</option></select></div>
+        <div style="flex:1;min-width:170px"><label>Category</label><select id="fCategory"><option value="">all categories</option></select></div>
+        <div style="flex:1;min-width:150px"><label>Direction</label>
+          <select id="fDirection"><option value="out">spending (out)</option><option value="in">income (in)</option></select></div>
+        <div style="flex:1;min-width:150px"><label>Layers</label>
+          <select id="fLayers"><option value="source,category,merchant">source → category → merchant</option>
+          <option value="source,merchant">source → merchant</option>
+          <option value="category,merchant">category → merchant</option>
+          <option value="merchant">merchant only</option></select></div>
+        <div style="flex:1;min-width:130px"><label>Top merchants</label>
+          <select id="fTop"><option value="0">all</option><option value="8">top 8</option><option value="15">top 15</option></select></div>
+        <div style="align-self:end;padding-bottom:8px"><button type="button" id="applyFilter" class="secondary">Apply</button></div>
       </div>
-    </form>
-    <div id="msg" class="muted"></div>
-  </div>
-
-  <!-- plaid secrets -->
-  <div class="card">
-    <h2>Plaid API secrets</h2>
-    <p class="muted" style="margin:0 0 8px;font-size:12px">Stored as a Kubernetes Secret (<code>money/plaid-secrets</code>). Never shown again after saving — blank a field to keep its current value.</p>
-    <div class="row">
-      <div style="flex:1;min-width:150px"><label>CLIENT_ID</label><input type="text" id="sClientId" autocomplete="off" spellcheck="false"></div>
-      <div style="flex:1;min-width:150px"><label>CLIENT_SECRET_PRD (production)</label><input type="password" id="sSecretPrd" autocomplete="new-password"></div>
-      <div style="flex:1;min-width:150px"><label>CLIENT_SECRET_TST (sandbox)</label><input type="password" id="sSecretTst" autocomplete="new-password"></div>
-      <div style="align-self:end;padding-bottom:8px"><button type="button" id="saveSecrets">Save</button></div>
     </div>
-    <div id="secretsState" class="muted" style="margin-top:8px;font-size:12px">—</div>
-    <div id="secretsMsg" class="muted" style="font-size:12px"></div>
-  </div>
-
-  <!-- plaid connect (production Link) -->
-  <div class="card">
-    <h2>Connect a bank / credit account</h2>
-    <p class="muted" style="margin:0 0 8px;font-size:12px">Open Plaid Link and sign into your real bank or credit-card issuer. The account is stored as a <code>production</code> item on this box (Plaid access token, LAN only).</p>
-    <div class="row">
-      <button type="button" id="connectAccount">Connect account</button>
-      <button type="button" id="syncPlaid" class="secondary">Sync all Plaid transactions</button>
-      <button type="button" id="connectTest" class="secondary">Sandbox test account</button>
+    <div class="card">
+      <h2>Summary</h2>
+      <div id="stats">—</div>
     </div>
-    <div id="plaidMsg" class="muted" style="margin-top:8px;font-size:12px">—</div>
-    <div id="plaidItems" class="files" style="margin-top:10px"></div>
-  </div>
-
-  <!-- filters -->
-  <div class="card">
-    <h2>Filters</h2>
-    <div class="row">
-      <div style="flex:1;min-width:170px"><label>Source</label><select id="fSource"><option value="">all sources</option></select></div>
-      <div style="flex:1;min-width:170px"><label>Category</label><select id="fCategory"><option value="">all categories</option></select></div>
-      <div style="flex:1;min-width:150px"><label>Direction</label>
-        <select id="fDirection"><option value="out">spending (out)</option><option value="in">income (in)</option></select></div>
-      <div style="flex:1;min-width:150px"><label>Layers</label>
-        <select id="fLayers"><option value="source,category,merchant">source → category → merchant</option>
-        <option value="source,merchant">source → merchant</option>
-        <option value="category,merchant">category → merchant</option>
-        <option value="merchant">merchant only</option></select></div>
-      <div style="flex:1;min-width:130px"><label>Top merchants</label>
-        <select id="fTop"><option value="0">all</option><option value="8">top 8</option><option value="15">top 15</option></select></div>
-      <div style="align-self:end;padding-bottom:8px"><button type="button" id="applyFilter" class="secondary">Apply</button></div>
+    <div class="card">
+      <h2>Sankey</h2>
+      <div id="plot"><p class="muted" style="text-align:center;padding:60px">Upload a file to see money flows.</p></div>
     </div>
-  </div>
+    <div class="card">
+      <div class="h2row"><h2>Uploaded files</h2><span class="muted" style="font-size:11px">(CSV exports feed the Sankey)</span></div>
+      <div id="files" class="files">—</div>
+    </div>
+  </section>
 
-  <!-- stats + sankey -->
-  <div class="card">
-    <h2>Summary</h2>
-    <div id="stats">—</div>
-  </div>
-  <div class="card">
-    <h2>Sankey</h2>
-    <div id="plot"><p class="muted" style="text-align:center;padding:60px">Upload a file to see money flows.</p></div>
-  </div>
+  <!-- ================= TRANSACTIONS ================= -->
+  <section class="view" id="view-transactions">
+    <div class="card">
+      <h2>Filters</h2>
+      <div class="row">
+        <div style="flex:1;min-width:170px"><label>Source</label><select id="tSource"><option value="">all sources</option></select></div>
+        <div style="flex:1;min-width:170px"><label>Category</label><select id="tCategory"><option value="">all categories</option></select></div>
+        <div style="flex:1;min-width:150px"><label>Direction</label>
+          <select id="tDirection"><option value="">both</option><option value="out">spending (out)</option><option value="in">income (in)</option></select></div>
+        <div style="flex:1;min-width:200px"><label>Search description</label>
+          <input type="text" id="tDesc" placeholder="e.g. grocery, amazon…"></div>
+        <div style="align-self:end;padding-bottom:8px"><button type="button" id="tApply" class="secondary">Apply</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="h2row"><h2>Transactions</h2><span id="txCount" class="muted"></span></div>
+      <div style="overflow:auto;max-height:560px"><table id="txTable"><thead><tr>
+        <th data-k="date">Date</th><th data-k="source">Source</th><th data-k="category">Category</th>
+        <th data-k="description">Description</th><th data-k="amount" style="text-align:right">Amount</th></tr>
+      </thead><tbody></tbody></table></div>
+    </div>
+  </section>
 
-  <!-- files + table -->
-  <div class="card">
-    <h2>Uploaded files</h2>
-    <div id="files" class="files">—</div>
-  </div>
-  <div class="card">
-    <h2>Transactions <span id="txCount" class="muted"></span></h2>
-    <div style="overflow:auto;max-height:420px"><table id="txTable"><thead><tr>
-      <th data-k="date">Date</th><th data-k="source">Source</th><th data-k="category">Category</th>
-      <th data-k="description">Description</th><th data-k="amount" style="text-align:right">Amount</th></tr>
-    </thead><tbody></tbody></table></div>
-  </div>
+  <!-- ================= ORDERS ================= -->
+  <section class="view" id="view-orders">
+    <div class="card">
+      <div class="h2row">
+        <h2>Orders</h2>
+        <button type="button" id="runCorrelate" class="small" style="margin-left:auto">Run correlation</button>
+        <button type="button" id="clearCorr" class="danger small">Clear correlations</button>
+      </div>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">Order history ingests via the API — correlation fuzzy-matches each order to a Plaid transaction (merchant + date + amount).</p>
+      <div id="corrMsg" class="muted" style="font-size:12px;margin-bottom:8px"></div>
+      <div id="orders" class="files">—</div>
+    </div>
+  </section>
+
+  <!-- ================= REVIEW ================= -->
+  <section class="view" id="view-review">
+    <div class="card">
+      <div class="h2row"><h2>Needs review</h2><span class="muted" style="font-size:11px">matches you must confirm or reject</span></div>
+      <div id="reviewList" class="files">—</div>
+    </div>
+    <div class="card">
+      <h2>Unmatched orders</h2>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">No Plaid transaction scored high enough — these stay un-correlated.</p>
+      <div id="unmatchedList" class="files">—</div>
+    </div>
+  </section>
+
+  <!-- ================= INTEGRATIONS ================= -->
+  <section class="view" id="view-integrations">
+    <div class="card">
+      <div class="h2row">
+        <h2>Linked accounts (Plaid)</h2>
+        <button type="button" id="connectAccount" class="small" style="margin-left:auto">Add account</button>
+        <button type="button" id="syncPlaid" class="secondary small">Sync all</button>
+        <button type="button" id="openSecrets" class="secondary small">API keys</button>
+      </div>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">Items stay linked until the bank forces a re-auth (password/MFA change) or accounts are renamed — the UI surfaces sync errors here.</p>
+      <div id="plaidMsg" class="muted" style="margin:4px 0 8px;font-size:12px">—</div>
+      <div id="plaidItems" class="files">—</div>
+    </div>
+  </section>
 
 </div>
+
+<!-- ================= MODAL: upload ================= -->
+<div class="modal-backdrop" id="modal-upload">
+  <div class="modal">
+    <button class="m-close" data-close="modal-upload" aria-label="close">×</button>
+    <h2>Upload an export</h2>
+    <p class="m-sub">Bank, credit-card, or merchant CSV — normalized to the canonical transaction format.</p>
+    <form id="uploadForm">
+      <label>CSV file</label>
+      <input type="file" id="file" accept=".csv,.txt,.tsv" required>
+      <label>Source label (e.g. "Huntington Checking", "Sams Club")</label>
+      <input type="text" id="source" placeholder="auto from filename if blank">
+      <label>Issuer profile (optional)</label>
+      <select id="profile">
+        <option value="">auto-detect</option>
+        <option value="huntington">Huntington</option>
+        <option value="chase">Chase</option>
+        <option value="capone">Capital One</option>
+        <option value="amex">Amex</option>
+        <option value="bestegg">BestEgg</option>
+        <option value="samsclub">Sams Club</option>
+        <option value="syncovy">Syncovy</option>
+      </select>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="allSpend"> All rows are purchases (merchant export)</label>
+      <div class="m-actions">
+        <span id="uploadMsg" class="muted" style="align-self:center;font-size:12px"></span>
+        <button type="button" class="secondary" data-close="modal-upload">Cancel</button>
+        <button type="submit">Upload &amp; parse</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ================= MODAL: connect account ================= -->
+<div class="modal-backdrop" id="modal-connect">
+  <div class="modal">
+    <button class="m-close" data-close="modal-connect" aria-label="close">×</button>
+    <h2>Add account</h2>
+    <p class="m-sub">Production = real bank login through Plaid Link. Sandbox = seeded test data, no login.</p>
+    <label>Environment</label>
+    <div class="row" style="margin-bottom:6px">
+      <label class="check"><input type="radio" name="env" value="production" checked> production</label>
+      <label class="check"><input type="radio" name="env" value="sandbox"> sandbox</label>
+    </div>
+    <div class="row">
+      <button type="button" id="openLinkBtn">Connect via Plaid Link</button>
+      <button type="button" id="connectTest" class="secondary">Sandbox test account (no login)</button>
+    </div>
+    <div id="connectMsg" class="muted" style="margin-top:10px;font-size:12px">—</div>
+  </div>
+</div>
+
+<!-- ================= MODAL: secrets ================= -->
+<div class="modal-backdrop" id="modal-secrets">
+  <div class="modal">
+    <button class="m-close" data-close="modal-secrets" aria-label="close">×</button>
+    <h2>Plaid API secrets</h2>
+    <p class="m-sub">Stored as a Kubernetes Secret (<code>money/plaid-secrets</code>). Never shown again after saving — blank a field to keep its current value.</p>
+    <label>CLIENT_ID</label>
+    <input type="text" id="sClientId" autocomplete="off" spellcheck="false">
+    <label>CLIENT_SECRET_PRD (production)</label>
+    <input type="password" id="sSecretPrd" autocomplete="new-password">
+    <label>CLIENT_SECRET_TST (sandbox)</label>
+    <input type="password" id="sSecretTst" autocomplete="new-password">
+    <div id="secretsState" class="muted" style="margin-top:10px;font-size:12px">—</div>
+    <div class="m-actions">
+      <span id="secretsMsg" class="muted" style="align-self:center;font-size:12px"></span>
+      <button type="button" class="secondary" data-close="modal-secrets">Close</button>
+      <button type="button" id="saveSecrets">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL: review correlation ================= -->
+<div class="modal-backdrop" id="modal-review">
+  <div class="modal">
+    <button class="m-close" data-close="modal-review" aria-label="close">×</button>
+    <h2>Review correlation</h2>
+    <p class="m-sub">Confirm this order matches the transaction, or reject it.</p>
+    <div id="reviewBody" class="muted">—</div>
+    <div class="m-actions">
+      <button type="button" id="rejectCorr" class="danger">Reject</button>
+      <button type="button" id="confirmCorr">Confirm match</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (id)=>document.getElementById(id);
-let sortKey="date", sortDir=1;
+let sortKey="date", sortDir=1, currentReview=null;
 const money = new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"});
 const fmtD = (d)=> d? d.slice(0,10):"";
+const esc = (s)=> String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
 async function api(path, opts){
   const r = await fetch(path, opts);
   if(!r.ok){ const t=await r.text().catch(()=>""); throw new Error((r.status)+" "+t.slice(0,200)); }
   if(r.status===204) return null; return r.json();
 }
-function msg(t,err){ $("msg").textContent=t; $("msg").className = err? "err":"muted"; }
 
+/* ---------------- tabs (hash-routed SPA) ---------------- */
+const TABS=["overview","transactions","orders","review","integrations"];
+const REFRESHERS={overview:refreshOverview,transactions:refreshTransactions,
+                  orders:refreshOrders,review:refreshReview,integrations:refreshIntegrations};
+function activate(name){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("active", b.dataset.tab===name));
+  document.querySelectorAll("section.view").forEach(s=>s.classList.toggle("active", s.id==="view-"+name));
+  REFRESHERS[name]().catch(e=>console.error(e));
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.addEventListener("click", ()=>{
+  if((location.hash||"#overview").slice(1)!==b.dataset.tab) location.hash=b.dataset.tab; else activate(b.dataset.tab);
+}));
+window.addEventListener("hashchange", ()=>{
+  const t=(location.hash||"#overview").slice(1);
+  if(TABS.includes(t)) activate(t);
+});
+
+/* ---------------- modals ---------------- */
+function openModal(id){ $(id).classList.add("open"); }
+function closeModal(id){ $(id).classList.remove("open"); }
+document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click", ()=>closeModal(b.dataset.close)));
+document.querySelectorAll(".modal-backdrop").forEach(b=>b.addEventListener("click", e=>{ if(e.target===b) b.classList.remove("open"); }));
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") document.querySelectorAll(".modal-backdrop.open").forEach(b=>b.classList.remove("open")); });
+$("openUpload").addEventListener("click", ()=>{ $("uploadMsg").textContent=""; openModal("modal-upload"); });
+$("openSecrets").addEventListener("click", ()=>{ loadSecrets(); openModal("modal-secrets"); });
+
+/* ---------------- upload ---------------- */
 $("uploadForm").addEventListener("submit", async (e)=>{
   e.preventDefault();
   const f=$("file").files[0]; if(!f) return;
@@ -184,30 +324,29 @@ $("uploadForm").addEventListener("submit", async (e)=>{
   fd.append("source", $("source").value);
   fd.append("profile", $("profile").value);
   fd.append("all_spend", $("allSpend").checked ? "true":"false");
-  msg("Parsing…");
+  $("uploadMsg").textContent="Parsing…";
   try{
     const r=await api("/api/upload",{method:"POST",body:fd});
-    msg(`✓ parsed ${r.parsed} rows from "${f.name}" (in ${money.format(r.inflow)}, out ${money.format(r.outflow)})`);
-    await refresh();
-  }catch(err){ msg("✗ "+err.message, true); }
+    $("uploadMsg").innerHTML=`<span class="ok">✓ parsed ${r.parsed} rows from "${esc(f.name)}" (in ${money.format(r.inflow)}, out ${money.format(r.outflow)})</span>`;
+    $("uploadForm").reset();
+    setTimeout(()=>{ closeModal("modal-upload"); activate("overview"); }, 700);
+  }catch(err){ $("uploadMsg").innerHTML=`<span class="err">✗ ${esc(err.message)}</span>`; }
 });
 
-async function refresh(){
-  await loadFacets(); await renderFiles(); await renderPlot(); await renderTable(); await renderStats();
-}
-
+/* ---------------- overview: facets + sankey + stats + files ---------------- */
 async function loadFacets(){
   const f = await api("/api/facets");
   fillSelect($("fSource"), f.sources, "all sources");
   fillSelect($("fCategory"), f.categories, "all categories");
+  fillSelect($("tSource"), f.sources, "all sources");
+  fillSelect($("tCategory"), f.categories, "all categories");
 }
 function fillSelect(sel, arr, allLabel){
   const cur = sel.value;
   sel.innerHTML = `<option value="">${allLabel}</option>` +
-    arr.map(v=>`<option value="${v}" ${v===cur?"selected":""}>${v}</option>`).join("");
+    arr.map(v=>`<option value="${v}" ${v===cur?"selected":""}>${esc(v)}</option>`).join("");
 }
-
-function filters(){
+function fFilters(){
   const p=new URLSearchParams();
   if($("fSource").value) p.set("source",$("fSource").value);
   if($("fCategory").value) p.set("category",$("fCategory").value);
@@ -215,40 +354,52 @@ function filters(){
   if($("fTop").value!="0") p.set("top",$("fTop").value);
   return p;
 }
-
+async function refreshOverview(){
+  await loadFacets(); await renderFiles(); await renderPlot(); await renderStats();
+}
 async function renderPlot(){
-  const p=filters();
+  const p=fFilters();
   p.set("layers",$("fLayers").value);
   try{
     const fig=await api("/api/sankey?"+p);
     Plotly.react("plot", fig.data, fig.layout);
-  }catch(err){ $("plot").innerHTML=`<p class='err'>${err.message}</p>`; }
+  }catch(err){ $("plot").innerHTML=`<p class='err'>${esc(err.message)}</p>`; }
 }
-
 async function renderStats(){
-  const p=filters(); p.delete("layers"); p.delete("top");
+  const p=fFilters(); p.delete("layers"); p.delete("top");
   const s=await api("/api/summary?"+p);
   $("stats").innerHTML=
     `<div><b>${s.transactions}</b><span>transactions</span></div>`+
     `<div><b>${money.format(s.outflow)}</b><span>total out</span></div>`+
     `<div><b>${money.format(s.inflow)}</b><span>total in</span></div>`;
 }
-
 async function renderFiles(){
   const fl=await api("/api/files");
-  if(!fl.length){ $("files").innerHTML="<span class='muted'>none yet</span>"; return; }
+  if(!fl.length){ $("files").innerHTML="<span class='muted'>none yet — Upload a CSV export</span>"; return; }
   $("files").innerHTML="<table class='files'><thead><tr><th>file</th><th>source</th><th>rows</th><th>uploaded</th><th></th></tr></thead><tbody>"+
-    fl.map(f=>`<tr><td>${f.filename}</td><td>${f.source}</td><td>${f.row_count}</td><td>${f.uploaded_at}</td>`+
-      `<td><button class="danger" data-del="${f.id}" style="padding:3px 10px">delete</button></td></tr>`).join("")+"</tbody></table>";
-  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",async()=>{
-    await api("/api/files/"+b.dataset.del,{method:"DELETE"}); await refresh();
+    fl.map(f=>`<tr><td>${esc(f.filename)}</td><td>${esc(f.source)}</td><td>${f.row_count}</td><td>${esc(f.uploaded_at)}</td>`+
+      `<td><button class="danger small" data-del="${f.id}">delete</button></td></tr>`).join("")+"</tbody></table>";
+  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click", async ()=>{
+    if(!confirm("Delete this file and its "+b.closest("tr").children[2].textContent+" transactions?")) return;
+    await api("/api/files/"+b.dataset.del,{method:"DELETE"}); await refreshOverview();
   }));
 }
+["fSource","fCategory","fDirection","fLayers","fTop"].forEach(id=>$(id).addEventListener("change", renderPlot));
+$("applyFilter").addEventListener("click", ()=>{ renderPlot(); renderStats(); });
 
-async function renderTable(){
-  const p=filters();
+/* ---------------- transactions tab ---------------- */
+function tFilters(){
+  const p=new URLSearchParams();
+  if($("tSource").value) p.set("source",$("tSource").value);
+  if($("tCategory").value) p.set("category",$("tCategory").value);
+  if($("tDirection").value) p.set("direction",$("tDirection").value);
+  if($("tDesc").value.trim()) p.set("description",$("tDesc").value.trim());
   p.set("limit","400");
-  const txs=await api("/api/transactions?"+p);
+  return p;
+}
+async function refreshTransactions(){
+  await loadFacets();
+  const txs=await api("/api/transactions?"+tFilters());
   $("txCount").textContent=`(${txs.length} shown)`;
   const order={date:0,source:1,category:2,description:3,amount:4};
   txs.sort((a,b)=>{ const x=a[sortKey]==null?"":a[sortKey], y=b[sortKey]==null?"":b[sortKey];
@@ -257,22 +408,175 @@ async function renderTable(){
   $("txTable").querySelector("tbody").innerHTML = txs.map(t=>{
     const cls = t.direction==="out"?"neg":"pos";
     const sgn = t.amount<0?"":"+";
-    return `<tr><td>${fmtD(t.date)}</td><td>${t.source||""}</td><td>${t.category||""}</td>`+
-      `<td>${(t.description||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")}</td>`+
+    return `<tr><td>${fmtD(t.date)}</td><td>${esc(t.source||"")}</td><td>${esc(t.category||"")}</td>`+
+      `<td>${esc(t.description||"")}</td>`+
       `<td align="right" class="${cls}">${sgn}${money.format(t.amount)}</td></tr>`;
   }).join("");
 }
 document.querySelectorAll("#txTable th[data-k]").forEach(th=>th.addEventListener("click",()=>{
   const k=th.dataset.k; if(sortKey===k) sortDir*=-1; else {sortKey=k; sortDir=(k=="amount")?-1:1;}
-  renderTable();
+  refreshTransactions();
 }));
-["fSource","fCategory","fDirection","fLayers","fTop"].forEach(id=>
-  $(id).addEventListener("change", renderPlot));
-$("applyFilter").addEventListener("click", ()=>{ renderPlot(); renderStats(); renderTable(); });
+$("tApply").addEventListener("click", refreshTransactions);
+$("tDesc").addEventListener("keydown", e=>{ if(e.key==="Enter") refreshTransactions(); });
 
-// ---- Plaid secrets (write-only panel) ----
+/* ---------------- orders tab ---------------- */
+async function refreshOrders(){
+  const orders=await api("/api/orders");
+  if(!orders.length){ $("orders").innerHTML="<span class='muted'>no orders yet</span>"; return; }
+  $("orders").innerHTML="<table class='files'><thead><tr><th>order #</th><th>retailer</th><th>date</th>"+
+    "<th style='text-align:right'>total</th><th>items</th><th>source</th></tr></thead><tbody>"+
+    orders.map(o=>`<tr><td>${esc(o.order_no)}</td><td>${esc(o.retailer)}</td><td>${fmtD(o.date)}</td>`+
+      `<td align='right'>${money.format(o.total)}</td><td>${(o.items||[]).map(i=>esc(i.name||"")).join(", ")||"-"}</td>`+
+      `<td>${esc(o.source||"")}</td></tr>`).join("")+"</tbody></table>";
+}
+$("runCorrelate").addEventListener("click", async ()=>{
+  $("corrMsg").textContent="Correlating…";
+  try{
+    const r=await api("/api/correlate",{method:"POST"});
+    $("corrMsg").innerHTML=`<span class="ok">✓ auto ${r.auto.length} · review ${r.review.length} · unmatched ${r.unmatched.length} · skipped ${r.skipped.length}</span>`;
+    await refreshOrders();
+  }catch(err){ $("corrMsg").innerHTML=`<span class="err">✗ ${esc(err.message)}</span>`; }
+});
+$("clearCorr").addEventListener("click", async ()=>{
+  if(!confirm("Delete all correlation results?")) return;
+  await api("/api/correlations/clear",{method:"POST"});
+  $("corrMsg").textContent="cleared";
+  await refreshOrders();
+});
+
+/* ---------------- review tab ---------------- */
+async function refreshReview(){
+  const r=await api("/api/needs-review");
+  const rc=r.review_correlations||[];
+  if(!rc.length){ $("reviewList").innerHTML="<span class='muted'>nothing to review 🎉</span>"; }
+  else{
+    $("reviewList").innerHTML="<table class='files'><thead><tr><th>order</th><th>tx</th><th>score</th><th></th></tr></thead><tbody>"+
+      rc.map(c=>`<tr><td>${esc(c.order_no)} · ${esc(c.retailer||"")}</td>`+
+        `<td>${esc(c.tx_name||"")} · ${fmtD(c.tx_date)} · ${money.format(c.tx_amount||0)}</td>`+
+        `<td>${(c.score||0).toFixed(2)}</td>`+
+        `<td><button class="small" data-review="${c.id}">review</button></td></tr>`).join("")+"</tbody></table>";
+    document.querySelectorAll("[data-review]").forEach(b=>b.addEventListener("click", ()=>{
+      currentReview = rc.find(c=>String(c.id)===b.dataset.review);
+      openReviewModal(currentReview);
+    }));
+  }
+  const um=r.unmatched_orders||[];
+  if(!um.length){ $("unmatchedList").innerHTML="<span class='muted'>none</span>"; }
+  else{
+    $("unmatchedList").innerHTML="<table class='files'><thead><tr><th>order #</th><th>retailer</th><th>date</th><th style='text-align:right'>total</th></tr></thead><tbody>"+
+      um.map(o=>`<tr><td>${esc(o.order_no)}</td><td>${esc(o.retailer)}</td><td>${fmtD(o.date)}</td>`+
+        `<td align='right'>${money.format(o.total)}</td></tr>`).join("")+"</tbody></table>";
+  }
+}
+function openReviewModal(c){
+  const items=(c.items_json? JSON.parse(c.items_json):[]);
+  $("reviewBody").innerHTML=`<div class="kv">
+    <dt>Order</dt><dd>${esc(c.order_no)} — <b>${esc(c.retailer||"")}</b></dd>
+    <dt>Order date</dt><dd>${fmtD(c.order_date)}</dd>
+    <dt>Order total</dt><dd>${money.format(c.order_total||0)}</dd>
+    <dt>Items</dt><dd>${items.map(i=>esc(i.name||"")).join(", ")||"-"}</dd>
+    <dt>Transaction</dt><dd>${esc(c.tx_name||"")} ${c.tx_merchant? "· "+esc(c.tx_merchant):""}</dd>
+    <dt>Tx date</dt><dd>${fmtD(c.tx_date)}</dd>
+    <dt>Tx amount</dt><dd>${money.format(c.tx_amount||0)}</dd>
+    <dt>Match score</dt><dd>${(c.score||0).toFixed(2)} / 3.0</dd></div>`;
+  openModal("modal-review");
+}
+async function resolveCorr(status){
+  const c=currentReview; if(!c) return;
+  try{
+    await api("/api/correlations/resolve",{method:"POST",headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({tx_id:c.tx_id, order_no:c.order_no, status})});
+    closeModal("modal-review");
+    await refreshReview();
+  }catch(err){ alert("✗ "+err.message); }
+}
+$("confirmCorr").addEventListener("click", ()=>resolveCorr("confirmed"));
+$("rejectCorr").addEventListener("click", ()=>resolveCorr("rejected"));
+
+/* ---------------- integrations tab ---------------- */
+async function refreshIntegrations(){
+  const s = await api("/api/plaid/status");
+  const items = s.items || [];
+  if(!items.length){ $("plaidItems").innerHTML="<span class='muted'>no linked accounts yet</span>"; return; }
+  $("plaidItems").innerHTML = "<table class='files'><thead><tr><th>institution</th><th>accounts</th><th>tx</th><th>product</th><th>linked</th></tr></thead><tbody>"+
+    items.map(it=>{
+      let prods=[], txOk=false;
+      try{ prods=JSON.parse(it.institution_products||"[]"); txOk=prods.includes("transactions"); }catch(e){}
+      const name = it.institution_name || it.institution_id;
+      const txBadge = it.tx_count>0 ? `<span class="badge ok">${it.tx_count}</span>`
+        : txOk ? `<span class="badge mute">0 — synced?</span>` : `<span class="badge warn">0 — no tx product</span>`;
+      return `<tr><td>${esc(name)} <span class="muted">${it.institution_name? "("+esc(it.institution_id)+")":""}</span></td>`+
+        `<td>${(it.accounts||[]).map(a=>`${esc(a.name)}${a.mask? " (…"+esc(a.mask)+")":""}`).join(", ")||"-"}</td>`+
+        `<td>${txBadge}</td><td>${esc(prods.join(", ")||"-")}</td>`+
+        `<td>${fmtD(it.linked_at)}</td></tr>`;
+    }).join("")+"</tbody></table>";
+}
+
+/* connect modal */
+$("connectAccount").addEventListener("click", ()=>{ $("connectMsg").textContent="—"; openModal("modal-connect"); });
+function connectEnv(){ return document.querySelector('input[name="env"]:checked').value; }
+document.querySelectorAll('input[name="env"]').forEach(r=>r.addEventListener("change", ()=>{
+  $("connectTest").style.display = connectEnv()==="sandbox" ? "" : "none";
+}));
+$("connectTest").style.display="none";
+let linkHandler = null;
+function openLink(env){
+  const m=(t,err)=>{ $("connectMsg").textContent=t; $("connectMsg").className = err? "err":"muted"; };
+  m("Creating Link token…");
+  api("/api/plaid/link/token",{method:"POST",headers:{"Content-Type":"application/json"},
+       body: JSON.stringify({env})}).then(tok=>{
+    if(!window.Plaid){ m("✗ Plaid Link SDK failed to load", true); return; }
+    linkHandler = window.Plaid.create({
+      token: tok.link_token,
+      onSuccess: async (public_token)=>{
+        m("Exchanging token…");
+        try{
+          const r = await api("/api/plaid/item/exchange",{method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({public_token, env})});
+          m(`✓ linked ${r.accounts.length} account(s) at ${r.institution_name||r.institution_id} — syncing…`);
+          await runSync(env);
+          closeModal("modal-connect");
+          activate("integrations");
+        }catch(e){ m("✗ "+e.message, true); }
+      },
+      onExit: (err)=>{ if(err){ m("Link exited: "+(err.error_message||err.display_message||err.code), true);} }
+    });
+    linkHandler.open();
+  }).catch(e=>m("✗ "+e.message, true));
+}
+$("openLinkBtn").addEventListener("click", ()=>openLink(connectEnv()));
+$("connectTest").addEventListener("click", async ()=>{
+  const m=(t,err)=>{ $("connectMsg").textContent=t; $("connectMsg").className = err? "err":"muted"; };
+  m("Creating sandbox item…");
+  try{
+    const r=await api("/api/plaid/sandbox/item",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    await runSync("sandbox");
+    closeModal("modal-connect");
+    activate("integrations");
+  }catch(e){ m("✗ "+e.message, true); }
+});
+
+async function runSync(env){
+  $("plaidMsg").textContent=`Syncing (${env})… this can take ~30s on a fresh account`;
+  let r;
+  try{ r = await api("/api/plaid/sync?env="+env, {method:"POST"}); }
+  catch(e){ $("plaidMsg").innerHTML=`<span class="err">✗ ${esc(e.message)}</span>`; return; }
+  if(r.errors && r.errors.length){
+    $("plaidMsg").innerHTML=`<span class="err">⚠ partial: +${r.added} added, errors: ${esc(JSON.stringify(r.errors))}</span>`;
+  } else {
+    $("plaidMsg").innerHTML=`<span class="ok">✓ synced ${r.items} item(s): +${r.added} added, ~${r.modified} modified, −${r.removed} removed</span>`;
+  }
+}
+$("syncPlaid").addEventListener("click", async ()=>{
+  try{ await runSync("production"); await refreshIntegrations(); }
+  catch(e){ $("plaidMsg").innerHTML=`<span class="err">✗ ${esc(e.message)}</span>`; }
+});
+
+/* secrets modal */
 function renderSecretsState(set){
-  const dot=(k)=> set[k] ? '<span style="color:#7fc58e">✓ set</span>' : '<span style="color:#5a6673">—</span>';
+  const dot=(k)=> set[k] ? '<span class="ok">✓ set</span>' : '<span class="muted">—</span>';
   $("secretsState").innerHTML =
     `CLIENT_ID ${dot("client_id")} &nbsp;·&nbsp; PRD ${dot("client_secret_prd")} &nbsp;·&nbsp; TST ${dot("client_secret_tst")}`;
 }
@@ -294,81 +598,17 @@ $("saveSecrets").addEventListener("click", async ()=>{
       headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
     $("sClientId").value=$("sSecretPrd").value=$("sSecretTst").value="";
     renderSecretsState(r.secrets_set);
-    $("secretsMsg").textContent = "✓ saved — values stored in k8s Secret (never echoed)";
-  }catch(err){ $("secretsMsg").textContent="✗ "+err.message; }
-});
-
-refresh().catch(e=>console.error(e));
-loadSecrets().catch(e=>console.error(e));
-
-// ---- Plaid Link: connect production account ----
-const plaidMsg = (t,err)=>{ $("plaidMsg").textContent=t; $("plaidMsg").className = err? "err":"muted"; };
-
-async function renderPlaidItems(){
-  try{
-    const s = await api("/api/plaid/status");
-    const items = s.items || [];
-    if(!items.length){ $("plaidItems").innerHTML="<span class='muted'>no linked accounts yet</span>"; return; }
-    $("plaidItems").innerHTML = "<table class='files'><thead><tr><th>env</th><th>institution</th><th>accounts</th><th>tx</th><th>linked</th></tr></thead><tbody>"+
-      items.map(it=>`<tr><td>${it.env}</td><td>${it.institution_id}</td>`+
-        `<td>${(it.accounts||[]).map(a=>`${a.name} (…${a.mask||""})`).join(", ")||"-"}</td>`+
-        `<td>${it.tx_count}</td><td>${fmtD(it.linked_at)}</td></tr>`).join("")+"</tbody></table>";
-  }catch(e){ $("plaidItems").textContent="items unavailable: "+e.message; }
-}
-
-let linkHandler = null;
-function openLink(env){
-  plaidMsg("Creating Link token…");
-  api("/api/plaid/link/token",{method:"POST",headers:{"Content-Type":"application/json"},
-       body: JSON.stringify({env})}).then(tok=>{
-    if(!window.Plaid){ plaidMsg("✗ Plaid Link SDK failed to load", true); return; }
-    linkHandler = window.Plaid.create({
-      token: tok.link_token,
-      onSuccess: async (public_token, metadata)=>{
-        plaidMsg("Exchanging token…");
-        try{
-          const r = await api("/api/plaid/item/exchange",{method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({public_token, env})});
-          plaidMsg(`✓ linked ${r.accounts.length} account(s) — now syncing…`);
-          await runSync(env);
-          await renderPlaidItems();
-        }catch(e){ plaidMsg("✗ "+e.message, true); }
-      },
-      onExit: (err)=>{ if(err){ plaidMsg("Link exited: "+(err.error_message||err.display_message||err.code), true);} }
-    });
-    linkHandler.open();
-  }).catch(e=>plaidMsg("✗ "+e.message, true));
-}
-
-async function runSync(env){
-  plaidMsg(`Syncing (${env})… this can take ~30s on a fresh account`);
-  let r;
-  try{ r = await api("/api/plaid/sync?env="+env, {method:"POST"}); }
-  catch(e){ plaidMsg("✗ "+e.message, true); return; }
-  if(r.errors && r.errors.length) plaidMsg("⚠ sync partial: "+JSON.stringify(r.errors), true);
-  else plaidMsg(`✓ synced ${r.items} item(s): +${r.added} added, ~${r.modified} modified, −${r.removed} removed`);
-}
-
-$("connectAccount").addEventListener("click", ()=>openLink("production"));
-$("connectTest").addEventListener("click", async ()=>{
-  plaidMsg("Creating sandbox item…");
-  try{
-    await api("/api/plaid/sandbox/item",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
-    await runSync("sandbox"); await renderPlaidItems();
-  }catch(e){ plaidMsg("✗ "+e.message, true); }
-});
-$("syncPlaid").addEventListener("click", async ()=>{
-  try{
-    plaidMsg("Syncing production…");
-    await runSync("production"); await renderPlaidItems();
-  }catch(e){ plaidMsg("✗ "+e.message, true); }
+    $("secretsMsg").innerHTML = '<span class="ok">✓ saved — stored in k8s Secret (never echoed)</span>';
+  }catch(err){ $("secretsMsg").innerHTML=`<span class="err">✗ ${esc(err.message)}</span>`; }
 });
 
 // lazy-load Plaid Link SDK
 (function(){ const s=document.createElement("script");
-  s.src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"; s.async=true; s.onload=()=>{}; document.head.appendChild(s); })();
-renderPlaidItems().catch(e=>console.error(e));
+  s.src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"; s.async=true; document.head.appendChild(s); })();
+
+// boot
+if(!TABS.includes((location.hash||"#overview").slice(1))) history.replaceState(null,"","#overview");
+activate((location.hash||"#overview").slice(1));
 </script>
 </body>
 </html>

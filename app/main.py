@@ -217,6 +217,17 @@ def _plaid(env: str) -> PlaidClient:
     return PlaidClient(env=env, secret_store=secret_store)
 
 
+def _resolve_institution(client: PlaidClient, institution_id: str) -> tuple[str, str]:
+    """Best-effort ins_* -> (name, products-json). Never raises (link must not
+    fail because a metadata lookup failed)."""
+    try:
+        inst = client.institutions_get_by_id(institution_id)
+        return (inst.get("name") or "", json.dumps(inst.get("products") or []))
+    except PlaidError:
+        return "", ""
+
+
+
 def _plaid_http(exc: PlaidError):
     return JSONResponse(status_code=exc.code if 400 <= exc.code < 600 else 502,
                         content={"error_type": getattr(exc, "error_type", None),
@@ -272,11 +283,13 @@ def plaid_item_exchange(payload: ExchangeIn):
     except PlaidError as e:
         return _plaid_http(e)
     store.upsert_plaid_item(exch["item_id"], exch["access_token"],
-                            item.get("institution_id", ""), accounts, env=env)
+                            item.get("institution_id", ""), accounts, env=env,
+                            *(_resolve_institution(client, item.get("institution_id", ""))))
     return {
         "item_id": exch["item_id"],
         "env": env,
         "institution_id": item.get("institution_id", ""),
+        "institution_name": (store.get_plaid_item(exch["item_id"]) or {}).get("institution_name", ""),
         "accounts": [{"id": a.get("account_id"), "name": a.get("name"),
                       "mask": a.get("mask"), "type": a.get("type"),
                       "subtype": a.get("subtype")} for a in accounts],
@@ -299,10 +312,12 @@ def plaid_sandbox_item(payload: SandboxItemIn):
     access_token = exch["access_token"]
     accounts = client.accounts_get(access_token)
     store.upsert_plaid_item(item_id, access_token, payload.institution_id,
-                            accounts, env="sandbox")
+                            accounts, env="sandbox",
+                            *(_resolve_institution(client, payload.institution_id)))
     return {
         "item_id": item_id,
         "institution_id": payload.institution_id,
+        "institution_name": (store.get_plaid_item(item_id) or {}).get("institution_name", ""),
         "accounts": [{"id": a.get("account_id"), "name": a.get("name"),
                       "mask": a.get("mask"), "type": a.get("type"),
                       "subtype": a.get("subtype")} for a in accounts],
@@ -322,6 +337,11 @@ def plaid_sync(env: str = "sandbox", item_id: str = ""):
     for it in items:
         if not it:
             continue
+        # Backfill institution metadata once (linked-before-this-build items).
+        if not it.get("institution_name") and it.get("institution_id"):
+            name, prods = _resolve_institution(client, it["institution_id"])
+            if name:
+                store.set_plaid_institution(it["item_id"], name, prods)
         try:
             res = client.transactions_sync(it["access_token"], it.get("cursor") or "")
             for tr in res.get("added", []):

@@ -120,6 +120,21 @@ class PlaidClient:
         r = self._post("/item/get", {"access_token": access_token})
         return r.get("item", {})
 
+    # ---- institution metadata ----
+    def institutions_get_by_id(self, institution_id: str) -> dict:
+        """Resolve an `ins_*` id to its human-readable name + supported products.
+
+        e.g. ins_21 -> {"institution_id": "ins_21",
+                        "name": "Huntington Bank — Personal & Business",
+                        "products": ["auth", "balance", "transactions", ...], ...}
+        Institutions endpoints are not billable; the result is cached in the DB.
+        """
+        r = self._post("/institutions/get_by_id", {
+            "institution_id": institution_id,
+            "country_codes": ["US"],
+        })
+        return r.get("institution", {})
+
     # ---- transactions (sync cursor semantics) ----
     def transactions_sync(self, access_token: str, cursor: str = "",
                           max_wait: float = 120.0, poll: float = 3.0) -> dict:
