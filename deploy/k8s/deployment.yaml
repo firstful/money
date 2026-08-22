@@ -26,7 +26,7 @@ spec:
         fsGroup: 65532
       containers:
         - name: money
-          image: 192.168.1.2:3000/reeds/money:b89c33e8
+          image: 192.168.1.2:3000/reeds/money:2951b85b
           imagePullPolicy: IfNotPresent
           ports:
             - {containerPort: 8000, name: http}
